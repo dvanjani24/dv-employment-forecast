@@ -1,0 +1,479 @@
+---
+title: "Final Monthly Forecast: April"
+author: "Deepak Vanjani (dvanjani)"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Based on the analysis conducted in this report, the **unemployment rate is forecasted to be 3.79%** and **total nonfarm payroll employment is expected to increase by 170,000** in April 2019. This report will explore various forecasting methods and explain the choices that were made in generating the above forecast estimates. 
+
+```{r warning = FALSE}
+libraries <- c("fredr","fpp2","quantreg","ggplot2","vars","tseries","forecast","rstanarm","glmnet","rstan","prophet","rpart","randomForest","xgboost","kernlab","caret",
+               "plyr","dplyr","knitr","kableExtra","tseries","rugarch","rstan","loo","bridgesampling","mgcv","gridExtra")
+lapply(libraries, require, character.only = TRUE)
+
+fredr_set_key("8782f247febb41f291821950cf9118b6")
+UNRATE <- fredr(series_id = "UNRATE")
+PAYEMS <- fredr(series_id = "PAYEMS",units="chg")
+
+unrate = ts(UNRATE[,3], start = c(1948,1), frequency = 12)
+autoplot(unrate) + labs(x = "Date", y = "Unemployment Rate (%)", title = "U.S Unemployment Rate (1948 - 2019)") + theme(legend.position = "none")
+
+payems = ts(PAYEMS[,3], start = c(1939,1), frequency = 12)
+autoplot(payems) + labs(x = "Date", y = "Change in Employment (100s of thousands)", title = "Change in Total U.S Nonfarm Payroll Employment Level (1939 - 2019)") + theme(legend.position = "none") + theme(plot.title = element_text(size=12))
+```
+
+### Exploring Various Forecasting Methods 
+
+**Autoregressive Forecasts using Empirical Risk Minimization**
+
+```{r}
+# Unrate 
+
+# Forecasting using AR(1-5) (Square Loss)
+unrate_AR1_selection = Arima(unrate,order=c(1,0,0),include.mean=FALSE)
+(unrate_AR1 = forecast(unrate_AR1_selection, h = 4))
+
+unrate_AR2_selection = Arima(unrate,order=c(2,0,0),include.mean=FALSE)
+(unrate_AR2 = forecast(unrate_AR2_selection, h = 4))
+
+unrate_AR3_selection = Arima(unrate,order=c(3,0,0),include.mean=FALSE)
+(unrate_AR3 = forecast(unrate_AR3_selection, h = 4))
+
+unrate_AR4_selection = Arima(unrate,order=c(4,0,0),include.mean=FALSE)
+(unrate_AR4 = forecast(unrate_AR4_selection, h = 4))
+
+unrate_AR5_selection = Arima(unrate,order=c(5,0,0),include.mean=FALSE)
+(unrate_AR5 = forecast(unrate_AR5_selection, h = 4))
+
+# Evaluation for Square Loss Methods for Unrate
+summary(unrate_AR1_selection)
+summary(unrate_AR2_selection)
+summary(unrate_AR3_selection)
+summary(unrate_AR4_selection)
+summary(unrate_AR5_selection)
+
+checkresiduals(unrate_AR1)
+checkresiduals(unrate_AR2)
+checkresiduals(unrate_AR3)
+checkresiduals(unrate_AR4)
+checkresiduals(unrate_AR5)
+
+#Plotting Forecasts
+autoplot(subset(unrate, start = 800), series = "Observed") + autolayer(unrate_AR1, series = "AR(1)", PI = FALSE) + autolayer(unrate_AR2, series = "AR(2)", PI = FALSE) + autolayer(unrate_AR3, series = "AR(3)", PI = FALSE) + autolayer(unrate_AR4, series = "AR(4)", PI = FALSE) + autolayer(unrate_AR5, series = "AR(5)", PI = FALSE) + ggtitle("Forecasts for Unemployment Rate") + guides(colour=guide_legend(title="Series and Forecasts")) + labs(x = "Date", y = "Unemployment Rate (%)")
+
+# Payems 
+# Forecasting using AR(1-5) (Square Loss)
+payems_AR1_selection = Arima(payems,order=c(1,0,0),include.mean=FALSE)
+(payems_AR1 = forecast(payems_AR1_selection, h = 4))
+
+payems_AR2_selection = Arima(payems,order=c(2,0,0),include.mean=FALSE)
+(payems_AR2 = forecast(payems_AR2_selection, h = 4))
+
+payems_AR3_selection = Arima(payems,order=c(3,0,0),include.mean=FALSE)
+(payems_AR3 = forecast(payems_AR3_selection, h = 4))
+
+payems_AR4_selection = Arima(payems,order=c(4,0,0),include.mean=FALSE)
+(payems_AR4 = forecast(payems_AR4_selection, h = 4))
+
+payems_AR5_selection = Arima(payems,order=c(5,0,0),include.mean=FALSE)
+(payems_AR5 = forecast(payems_AR5_selection, h = 4))
+
+# Evaluation for Square Loss Methods for Payems
+summary(payems_AR1_selection)
+summary(payems_AR2_selection)
+summary(payems_AR3_selection)
+summary(payems_AR4_selection)
+summary(payems_AR5_selection)
+
+checkresiduals(payems_AR1)
+checkresiduals(payems_AR2)
+checkresiduals(payems_AR3)
+checkresiduals(payems_AR4)
+checkresiduals(payems_AR5)
+
+#Plotting Forecasts
+autoplot(subset(payems, start = 800), series = "Observed") + autolayer(payems_AR1, series = "AR(1)", PI = FALSE) + autolayer(payems_AR2, series = "AR(2)", PI = FALSE) + autolayer(payems_AR3, series = "AR(3)", PI = FALSE) + autolayer(payems_AR4, series = "AR(4)", PI = FALSE) + autolayer(payems_AR5, series = "AR(5)", PI = FALSE) + ggtitle("Forecasts for Changes in Nonfarm Payroll Employment") + guides(colour=guide_legend(title="Series and Forecasts")) + labs(x = "Date", y = "Change in Employment (100's of thousands of persons)")
+  
+```
+
+Residual plots look similar for all methods; however, in an effort to be more selective, I will remove AR(1) and AR(2) forecasts from my final average, as their RMSE values are slightly worse than the other methods. 
+
+**Vector Autoregressions Forecasts Incorporating Additional Variables**
+
+Below I created vector autoregressions jointly in unrate, payems, prices of the NASDAQ (Fred Series: NASDAQCOM), US Retail Gas Prices (Fred Series: GASREGW), Consumer Price Index (Fred Series: CPIAUCSL), and the effective Federal Funds Rate (Fred Series: EFFR). I decided to choose these variables after conducting some independent research online on economic that have been found to be linked to employment figures. The following research study was used in my decision-making process: https://pdfs.semanticscholar.org/0ab6/643904b461588428735b0b8c4b8e686bab35.pdf. 
+
+I found that all the series' I added had issues with stationarity and dependence. I discovered the stationarity issue by using the Augmented Dickey-Fuller Test, which tests the null hypothesis of no stationarity. I adjusted the time series' by using the `diff` function as shown below - this improved the stationarity and dependency issues. 
+
+```{r}
+#Loading NASDAQ, GAS prices, CPI, and FFR data
+NASDAQ = read.csv("NASDAQCOM.csv")
+nasdaq =  ts(NASDAQ[,2], start = c(1971,3), frequency = 12)
+ggseasonplot(nasdaq)
+adf.test(nasdaq)
+nasdaq = diff(nasdaq, differences = ndiffs(nasdaq))
+adf.test(nasdaq)
+acf(nasdaq)
+
+GAS = read.csv("GASREGW.csv")
+gas =  ts(GAS[,2], start = c(1990,9), frequency = 12)
+ggseasonplot(gas)
+adf.test(gas)
+gas = diff(gas, differences = ndiffs(gas))
+adf.test(gas)
+acf(gas)
+
+CPI = read.csv("CPIAUCSL.csv")
+cpi =  ts(CPI[,2], start = c(1947,1), frequency = 12)
+ggseasonplot(cpi)
+adf.test(cpi)
+cpi = diff(cpi, differences = ndiffs(cpi))
+adf.test(cpi)
+acf(cpi)
+
+FFR = read.csv("EFFR.csv")
+ffr = ts(FFR[,2], start = c(2000,7), frequency = 12)
+ggseasonplot(ffr)
+adf.test(ffr)
+ffr = diff(ffr, differences = ndiffs(ffr))
+adf.test(nasdaq)
+acf(nasdaq)
+
+
+df_2 = na.omit(cbind(unrate, payems, nasdaq, gas, cpi, ffr))
+colnames(df_2) = c("unrate", "payems", "nasdaq", "gas", "cpi", "ffr")
+
+var.1 = VAR(df_2, p = 1)
+(var.1_forecast = forecast(var.1,4))
+
+var.2 = VAR(df_2, p = 2)
+(var.2_forecast = forecast(var.2,4))
+
+var.3 = VAR(df_2, p = 3)
+(var.3_forecast = forecast(var.3,4))
+
+var.4 = VAR(df_2, p = 4)
+(var.4_forecast = forecast(var.4,4))
+
+var.5 = VAR(df_2, p = 5)
+(var.5_forecast = forecast(var.5,4))
+
+# Evaluating VAR(1-5) (Unrate, Payems, Nasdaq, Gas, CPI, FFR) 
+AIC(var.1)
+AIC(var.2)
+AIC(var.3)
+AIC(var.4)
+AIC(var.5)
+
+BIC(var.1)
+BIC(var.2)
+BIC(var.3)
+BIC(var.4)
+BIC(var.5)
+
+checkresiduals(var.1$varresult$unrate)
+checkresiduals(var.2$varresult$unrate)
+checkresiduals(var.3$varresult$unrate)
+checkresiduals(var.4$varresult$unrate)
+checkresiduals(var.5$varresult$unrate)
+
+checkresiduals(var.1$varresult$payems)
+checkresiduals(var.2$varresult$payems)
+checkresiduals(var.3$varresult$payems)
+checkresiduals(var.4$varresult$payems)
+checkresiduals(var.5$varresult$payems)
+
+# Plots 
+
+autoplot(subset(unrate, start = 800), series = "Observed") + autolayer(var.1_forecast$forecast$unrate, series = "VAR(1)", PI = FALSE) + autolayer(var.2_forecast$forecast$unrate, series = "VAR(2)", PI = FALSE) + autolayer(var.3_forecast$forecast$unrate, series = "VAR(3)", PI = FALSE) + autolayer(var.4_forecast$forecast$unrate, series = "VAR(4)", PI = FALSE) + autolayer(var.5_forecast$forecast$unrate, series = "VAR(5)", PI = FALSE) + ggtitle("Forecasts for Unemployment Rate") + guides(colour=guide_legend(title="Series and Forecasts")) + labs(x = "Date", y = "Unemployment Rate (%)")
+
+autoplot(subset(payems, start = 800), series = "Observed") + autolayer(var.1_forecast$forecast$payems, series = "VAR(1)", PI = FALSE) + autolayer(var.2_forecast$forecast$payems, series = "VAR(2)", PI = FALSE) + autolayer(var.3_forecast$forecast$payems, series = "VAR(3)", PI = FALSE) + autolayer(var.4_forecast$forecast$payems, series = "VAR(4)", PI = FALSE) + autolayer(var.5_forecast$forecast$payems, series = "VAR(5)", PI = FALSE) + ggtitle("Forecasts for Changes in Nonfarm Payroll Employment") + guides(colour=guide_legend(title="Series and Forecasts")) + labs(x = "Date", y = "Change in Employment (100's of thousands of persons)")
+```
+
+Residual plots and AIC/BIC values look similar across the board - so I will include all forecasts in my final average. 
+
+
+**Multivariate Forecasts - VAR (5) Using Penalized ERM**
+
+```{r}
+# unrate 
+
+# Unrate
+a = glmnet(df_2[,c(2:6)],df_2[,1],family="gaussian")
+predict(var.5,s=a$lambda)$fcst$unrate
+
+b = glmnet(df_2[,c(2:6)],df_2[,1],family="mgaussian")
+predict(var.5,s=b$lambda)$fcst$unrate
+
+c = glmnet(df_2[,c(2:6)],df_2[,1],family="gaussian", alpha = 0)
+predict(var.5,s=c$lambda)$fcst$unrate
+
+d = glmnet(df_2[,c(2:6)],df_2[,1],family="mgaussian", alpha = 0)
+predict(var.5,s=d$lambda)$fcst$unrate
+
+
+# Payems
+
+a = glmnet(df_2[,c(1,3,4,5,6)],df_2[,2],family="gaussian")
+predict(var.5,s=a$lambda)$fcst$payems
+
+b = glmnet(df_2[,c(1,3,4,5,6)],df_2[,2],family="mgaussian")
+predict(var.5,s=b$lambda)$fcst$payems
+
+c = glmnet(df_2[,c(1,3,4,5,6)],df_2[,2],family="gaussian", alpha = 0)
+predict(var.5,s=c$lambda)$fcst$payems
+
+d = glmnet(df_2[,c(1,3,4,5,6)],df_2[,2],family="mgaussian", alpha = 0)
+predict(var.5,s=d$lambda)$fcst$payems
+```
+
+**Bayesian Methods: Autoregression (6) using Laplace Priors**
+
+```{r}
+# unrate
+
+unratelags<-data.frame(
+  window(unrate,start=c(1948,7),end=c(2019,3)),
+  window(stats::lag(unrate,-1),start=c(1948,7),end=c(2019,3)),
+  window(stats::lag(unrate,-2),start=c(1948,7),end=c(2019,3)),
+  window(stats::lag(unrate,-3),start=c(1948,7),end=c(2019,3)),
+  window(stats::lag(unrate,-4),start=c(1948,7),end=c(2019,3)),
+  window(stats::lag(unrate,-5),start=c(1948,7),end=c(2019,3)), 
+  window(stats::lag(unrate,-6),start=c(1948,7),end=c(2019,3)))
+  
+colnames(unratelags)<-c("unrate","unratel1","unratel2","unratel3","unratel4","unratel5", "unratel6")
+
+untoday<-length(unratelags$unrate) #Last observation
+untodayslags<-data.frame(unratelags$unrate[untoday],
+    unratelags$unratel1[untoday],unratelags$unratel2[untoday],
+    unratelags$unratel3[untoday],unratelags$unratel4[untoday], 
+    unratelags$unratel5[untoday],unratelags$unratel6[untoday])
+names(untodayslags)<-c("unratel1","unratel2","unratel3","unratel4","unratel5", "unratel6")
+
+options(mc.cores = parallel::detectCores())
+AR6_unrate_c = stan_glm(unrate ~ unratel1 + unratel2 + unratel3 + unratel4 + unratel5 + unratel6, data = unratelags, prior = laplace())
+summary(AR6_unrate_c, digits = 5)
+
+predict_AR6_unrate_c = posterior_predict(AR6_unrate_c, newdata = untodayslags)
+summary(predict_AR6_unrate_c)
+
+quantile(predict_AR6_unrate_c, c(0.025, 0.975))
+
+# Evaluation 
+summary(AR6_unrate_c, digits = 5)
+prior_summary(AR6_unrate_c)
+hist(predict_AR6_unrate_c)
+                        
+autoplot(subset(unrate, start = 800), color = "blue") + ggtitle("Forecast for Unemployment Rate") + labs(x = "Date", y = "Unemployment Rate (%)") + geom_point(aes(x = 2019.33, y = 3.889), color = "red") 
+
+# payems 
+
+payemslags<-data.frame(
+  window(payems,start=c(1939,7),end=c(2019,3)),
+  window(stats::lag(payems,-1),start=c(1939,7),end=c(2019,3)),
+  window(stats::lag(payems,-2),start=c(1939,7),end=c(2019,3)),
+  window(stats::lag(payems,-3),start=c(1939,7),end=c(2019,3)),
+  window(stats::lag(payems,-4),start=c(1939,7),end=c(2019,3)),
+  window(stats::lag(payems,-5),start=c(1939,7),end=c(2019,3)), 
+  window(stats::lag(payems,-6),start=c(1939,7),end=c(2019,3)))
+  
+colnames(payemslags)<-c("payems","payemsl1","payemsl2","payemsl3","payemsl4","payemsl5", "payemsl6")
+
+ptoday<-length(payemslags$payems) #Last observation
+ptodayslags<-data.frame(payemslags$payems[ptoday],payemslags$payemsl1[ptoday],
+      payemslags$payemsl2[ptoday],payemslags$payemsl3[ptoday],payemslags$payemsl4[ptoday], payemslags$payemsl5[ptoday], payemslags$payemsl6[ptoday])
+names(ptodayslags)<-c("payemsl1","payemsl2","payemsl3","payemsl4","payemsl5", "payemsl6")
+
+options(mc.cores = parallel::detectCores())
+AR6_payems_c = stan_glm(payems ~ payemsl1 + payemsl2 + payemsl3 + payemsl4 + payemsl5 + payemsl6, data = payemslags, prior = laplace())
+summary(AR6_payems_c, digits = 5)
+
+predict_AR6_payems_c = posterior_predict(AR6_payems_c, newdata = ptodayslags)
+summary(predict_AR6_payems_c)
+
+quantile(predict_AR6_payems_c, c(0.025, 0.975))
+                        
+autoplot(subset(payems, start = 800), color = "blue") + ggtitle("Forecast for Changes in Nonfarm Payroll Employment") + labs(x = "Date", y = "Change in Employment (100's of thousands of persons)") + geom_point(aes(x = 2019.33, y = 194.10), color = "red")
+```
+
+
+**Machine Learning Procedures: Tree, Random Forrest, and Boosting**
+
+For my ML methods, I chose to create a dataset containing the lagged values of unrate/payems up to the 6th lag value, and also added the variables that I included in my VAR model earlier, which have been proven to be related to employment. 
+
+```{r}
+# Unrate 
+df_2 = data.frame(na.omit(cbind(unrate, stats::lag(unrate, -1), stats::lag(unrate, -2), stats::lag(unrate, -3), stats::lag(unrate, -4), stats::lag(unrate, -5), stats::lag(unrate, -6), stats::lag(payems, -1), stats::lag(nasdaq,-1), stats::lag(gas,-1), stats::lag(cpi,-1), stats::lag(ffr,-1))))
+colnames(df_2) = c("unrate", "unratelag1", "unratelag2", "unratelag3", "unratelag4", "unratelag5", "unratelag6", "payems", "nasdaq", "gas", "cpi", "ffr")
+
+
+set.seed(998) 
+
+inTraining <- createDataPartition(df_2$unrate, p = .75, list = FALSE) 
+training <- df_2[ inTraining,]
+testing  <- df_2[-inTraining,]
+
+rpfit <- rpart(unrate ~ ., data = training)
+
+fitControl <- trainControl(
+                           method = "repeatedcv",
+                           number = 10,
+                           repeats = 10)
+
+rpfit1  <- train(unrate ~ ., data = training, 
+                 method = "rpart", 
+                 trControl = fitControl,
+                 na.action = na.exclude)
+
+forestControl <- trainControl(method = "none") 
+rffit1  <- train(unrate ~ ., data = training, 
+                 method = "rf", 
+                 trControl = forestControl,
+                 na.action = na.exclude)
+splitspertree<-rffit1$finalModel$mtry
+numbertrees<-rffit1$finalModel$ntree
+
+xgbfitControl <- trainControl(
+                            method = "repeatedcv",
+                            number = 10,
+                            repeats = 10)
+
+xgbfit1  <- train(unrate ~ ., data = training, 
+                  method = "xgbTree", 
+                  trControl = xgbfitControl,
+                  na.action = na.exclude)
+
+cvparam <- list(max_depth = 1, eta = 0.3, gamma=0, colsample_bytree=0.8,
+                min_child_weight=1, subsample=1, objective = "reg:linear", eval_metric = "rmse")
+
+trainfeat<-select(training,-one_of("unrate"))
+testfeat<-select(testing,-one_of("unrate"))
+
+dtrain <- xgb.DMatrix(as.matrix(trainfeat), label=training$unrate)
+dtest <- xgb.DMatrix(as.matrix(testfeat), label = testing$unrate)
+
+watchlist <- list(train = dtrain, eval = dtest)
+
+bst <- xgb.train(params=cvparam, data=dtrain,verbose=0,nrounds=50,watchlist=watchlist)
+
+# Forecasts 
+rppreds<-predict(rpfit1$finalModel, newdata = testing) #Decision Tree
+rfpreds<-predict(rffit1$finalModel, newdata = na.roughfix(testing)) #Random Forest
+bstpreds<-predict(bst,newdata=as.matrix(testfeat)) #Tree Boosting
+
+# Evaluation 
+prederrors<-data.frame((rppreds-testing$unrate)^2,(rfpreds-testing$unrate)^2,
+                       (bstpreds-testing$unrate)^2)
+MSEvec<-colMeans(prederrors,na.rm=TRUE) 
+TestRMSE<-sqrt(MSEvec) 
+
+rprmse<-rpfit1$results$RMSE[1] 
+rfrmse<-sqrt(rffit1$finalModel$mse[500]) 
+bstrmse<-bst$evaluation_log$train_rmse[50] 
+
+TrainRMSE<-c(rprmse,rfrmse,bstrmse)
+resmat<-as.matrix(data.frame(TestRMSE,TrainRMSE))
+fitresults<-data.frame(t(resmat))
+colnames(fitresults)<-c("Tree","Random Forest","Boosting")
+fitresults
+
+autoplot(subset(unrate, start = 800), color = "blue") + ggtitle("Forecast for Unemployment Rate") + labs(x = "Date", y = "Unemployment Rate (%)") + geom_point(aes(x = 2019.33, y = 4.528169), color = "red") + geom_point(aes(x = 2019.33, y = 3.864400), color = "magenta") + geom_point(aes(x = 2019.33, y = 3.854172), color = "darkgreen") 
+```
+
+```{r}
+# Payems 
+
+df_2 = data.frame(na.omit(cbind(payems, stats::lag(payems, -1), stats::lag(payems, -2), stats::lag(payems, -3), stats::lag(payems, -4), stats::lag(payems, -5), stats::lag(payems, -6), stats::lag(unrate, -1), stats::lag(nasdaq,-1), stats::lag(gas,-1), stats::lag(cpi,-1), stats::lag(ffr,-1))))
+colnames(df_2) = c("payems", "payemslag1", "payemslag2", "payemslag3", "payemslag4", "payemslag5", "payemslag6", "unrate", "nasdaq", "gas", "cpi", "ffr")
+
+
+set.seed(998) 
+
+inTraining <- createDataPartition(df_2$payems, p = .75, list = FALSE)
+training <- df_2[ inTraining,]
+testing  <- df_2[-inTraining,]
+
+rpfit <- rpart(payems ~ ., data = training)
+
+fitControl <- trainControl(
+                           method = "repeatedcv",
+                           number = 10,
+                           repeats = 10)
+
+rpfit1  <- train(payems ~ ., data = training, 
+                 method = "rpart", 
+                 trControl = fitControl,
+                 na.action = na.exclude)
+
+rffit1  <- train(payems ~ ., data = training, 
+                 method = "rf", 
+                 trControl = forestControl,
+                 na.action = na.exclude)
+splitspertree<-rffit1$finalModel$mtry
+numbertrees<-rffit1$finalModel$ntree
+
+xgbfitControl <- trainControl(
+                            method = "repeatedcv",
+                            number = 10,
+                            repeats = 10)
+
+xgbfit1  <- train(payems ~ ., data = training, 
+                  method = "xgbTree", 
+                  trControl = xgbfitControl,
+                  na.action = na.exclude)
+
+cvparam <- list(max_depth = 1, eta = 0.3, gamma=0, colsample_bytree=0.8,
+                min_child_weight=1, subsample=1, objective = "reg:linear", eval_metric = "rmse")
+
+trainfeat<-select(training,-one_of("payems"))
+testfeat<-select(testing,-one_of("payems"))
+
+dtrain <- xgb.DMatrix(as.matrix(trainfeat), label=training$payems)
+dtest <- xgb.DMatrix(as.matrix(testfeat), label = testing$payems)
+
+watchlist <- list(train = dtrain, eval = dtest)
+
+bst <- xgb.train(params=cvparam, data=dtrain,verbose=0,nrounds=50,watchlist=watchlist)
+
+# Forecasts 
+rppreds<-predict(rpfit1$finalModel, newdata = testing) #Decision Tree
+rfpreds<-predict(rffit1$finalModel, newdata = na.roughfix(testing)) #Random Forest
+bstpreds<-predict(bst,newdata=as.matrix(testfeat)) #Tree Boosting
+
+# Evaluation 
+prederrors<-data.frame((rppreds-testing$payems)^2,(rfpreds-testing$payems)^2,
+                       (bstpreds-testing$payems)^2)
+MSEvec<-colMeans(prederrors,na.rm=TRUE)
+TestRMSE<-sqrt(MSEvec) 
+
+rprmse<-rpfit1$results$RMSE[1] 
+rfrmse<-sqrt(rffit1$finalModel$mse[500]) 
+bstrmse<-bst$evaluation_log$train_rmse[50] 
+
+TrainRMSE<-c(rprmse,rfrmse,bstrmse)
+resmat<-as.matrix(data.frame(TestRMSE,TrainRMSE))
+fitresults<-data.frame(t(resmat))
+colnames(fitresults)<-c("Tree","Random Forest","Boosting")
+fitresults
+
+
+autoplot(subset(payems, start = 800), color = "blue") + ggtitle("Forecast for Changes in Nonfarm Payroll Employment") + labs(x = "Date", y = "Change in Employment (100's of thousands of persons)") + geom_point(aes(x = 2019.33, y = 146.7534), color = "red") + geom_point(aes(x = 2019.33, y = 213.272733), color = "magenta") + geom_point(aes(x = 2019.33, y = 246.33800), color = "darkgreen") 
+```
+
+For both series, the tree method seems to perform substantially worse than random forrest and boosting, so I will remove the tree forecasts from my final average. 
+
+### Conclusion
+
+For my first ever forecast (for January), I relied heavily on expert judgement and ended up doing quite poorly, and so for my second forecast (for February), I decided to equally-weight model averages, and I definitely improved my estimates, but I was still not as accurate as I felt I could be, and I realized a potentially reason for this was that I was not selective enough in my model selection - I felt that models were more similar than others in terms of diagnostics/loss measures and so I decided to keep the majority of them them in my final averaging, when perhaps being a little more selective could've given me better estimates. So, for my third forecast (for March), I also used an equal-weighted average but was much more selective this time, and I ended up performing quite well. Thus, I decided to carry out the same method for my final forecast, and made sure to be equally if not more selective and I also made an effort to guage the opinion of experts when formulating my final forecast. 
+
+After evaluating the baseline methods and removing forecasts that performed substantially worse in regards to diagnostics and RMSE, I decided to average the remaining forecasts to create my final forecast. The reasons that I decided to go with an equal-weight model average are the following: this method minimizes risk, reduces chance of over fitting as it is not not dependent on the data, improves square loss risk, and if all methods are performing somewhat similarily, which I feel like has been the case for most forecasts for the two series' we have been dealing with, it gives the chance for all methods to contribute to the forecast. 
+
+For `unrate`, I removed the AR(1), AR(2), and tree forecasts as they underperformed compared to other methods - this resulted in a forecast of 3.79%. 
+
+For `payems`, I also removed the AR(1), AR(2), and tree forecasts as they underpeformed compared to other methods. Because nonfarm payrolls growth has been quite volatile recently, I decided to research how experts in the industry are expecting April's numbers to look like and found that estimates were in the 170k-180k range, which is substantially higher than some of my estimates. I thus decided to remove two additional forecasts: VAR(2) and Var(5), which estimated the growth to be 101k and 114k respectively. Removing the necessary estimates resulted in a forecast of 170k. 
+
+
+
