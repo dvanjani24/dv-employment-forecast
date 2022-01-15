@@ -9,6 +9,6 @@ As a part of the final project, I considered various modeling approaches to fore
 The forecasting methodologies that were considered as displayed in my code included: 
 - Autoregressive Models using Empirical Risk Minimization
 - Vector Autoregressive Models including variables such as NASDAQ prices, US Retail Gas Prices, the Consumer Price Index, and the Federal Funds Rate
-- Bayesian Methods, like Autoregressive Models using Laplace Priors
-- Machine Learning Approaches, like Tree, Random Forest, and Boosting
+- Bayesian Methods, such as Autoregressive Models using Laplace Priors
+- Machine Learning Approaches, such as Tree, Random Forest, and Boosting
 
